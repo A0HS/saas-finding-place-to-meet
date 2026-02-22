@@ -9,8 +9,8 @@ import { DUMMY_FRIENDS } from "@/lib/dummyData";
 interface Friend {
   id: string;
   name: string;
-  addressRaw: string;
-  addressDisplay: string | null;
+  address_raw: string;
+  address_display: string | null;
   latitude: number | null;
   longitude: number | null;
 }
@@ -64,10 +64,10 @@ export default function FriendsPage() {
   function openEditModal(friend: Friend) {
     setEditingFriend(friend);
     setFormName(friend.name);
-    setFormAddress(friend.addressRaw);
+    setFormAddress(friend.address_raw);
     setGeoResult(
       friend.latitude && friend.longitude
-        ? { lat: friend.latitude, lng: friend.longitude, displayAddress: friend.addressDisplay || friend.addressRaw }
+        ? { lat: friend.latitude, lng: friend.longitude, displayAddress: friend.address_display || friend.address_raw }
         : null
     );
     setGeoError("");
@@ -96,11 +96,11 @@ export default function FriendsPage() {
 
     const body: Record<string, unknown> = {
       name: formName,
-      addressRaw: formAddress,
+      address_raw: formAddress,
     };
 
     if (geoResult) {
-      body.addressDisplay = geoResult.displayAddress;
+      body.address_display = geoResult.displayAddress;
       body.latitude = geoResult.lat;
       body.longitude = geoResult.lng;
     }
@@ -128,8 +128,8 @@ export default function FriendsPage() {
               ? {
                   ...f,
                   name: formName,
-                  addressRaw: formAddress,
-                  addressDisplay: geoResult?.displayAddress || f.addressDisplay,
+                  address_raw: formAddress,
+                  address_display: geoResult?.displayAddress || f.address_display,
                   latitude: geoResult?.lat ?? f.latitude,
                   longitude: geoResult?.lng ?? f.longitude,
                 }
@@ -140,8 +140,8 @@ export default function FriendsPage() {
         const newFriend: Friend = {
           id: `demo-${Date.now()}`,
           name: formName,
-          addressRaw: formAddress,
-          addressDisplay: geoResult?.displayAddress || null,
+          address_raw: formAddress,
+          address_display: geoResult?.displayAddress || null,
           latitude: geoResult?.lat || null,
           longitude: geoResult?.lng || null,
         };
@@ -159,13 +159,13 @@ export default function FriendsPage() {
 
     for (const friend of ungeocoded) {
       try {
-        const result = await geocodeAddress(friend.addressRaw);
+        const result = await geocodeAddress(friend.address_raw);
         if (isAuth) {
           await fetch(`/api/friends/${friend.id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              addressDisplay: result.displayAddress,
+              address_display: result.displayAddress,
               latitude: result.lat,
               longitude: result.lng,
             }),
@@ -174,7 +174,7 @@ export default function FriendsPage() {
           setFriends((prev) =>
             prev.map((f) =>
               f.id === friend.id
-                ? { ...f, addressDisplay: result.displayAddress, latitude: result.lat, longitude: result.lng }
+                ? { ...f, address_display: result.displayAddress, latitude: result.lat, longitude: result.lng }
                 : f
             )
           );
@@ -262,7 +262,7 @@ export default function FriendsPage() {
                     >
                       <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm font-medium text-gray-900 whitespace-nowrap">{friend.name}</td>
                       <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm text-gray-600">
-                        {friend.addressDisplay || friend.addressRaw}
+                        {friend.address_display || friend.address_raw}
                       </td>
                       <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm">
                         {friend.latitude ? (
@@ -304,7 +304,7 @@ export default function FriendsPage() {
             <>
               <NaverMap lat={previewFriend.latitude} lng={previewFriend.longitude} />
               <p className="mt-2 text-sm text-gray-600">
-                {previewFriend.name} - {previewFriend.addressDisplay || previewFriend.addressRaw}
+                {previewFriend.name} - {previewFriend.address_display || previewFriend.address_raw}
               </p>
             </>
           ) : (

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { getAuthUserId } from "@/lib/auth";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 interface DirectionsResult {
   distanceKm: number;
@@ -170,8 +169,9 @@ export async function POST(request: Request) {
   }
 
   // Auth mode: look up from DB
-  const userId = await getAuthUserId();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { friendIds, placeId } = body;
 
@@ -182,19 +182,25 @@ export async function POST(request: Request) {
     );
   }
 
-  const place = await prisma.place.findFirst({ where: { id: placeId, userId } });
+  const { data: place } = await supabase
+    .from("places")
+    .select("*")
+    .eq("id", placeId)
+    .single();
+
   if (!place) {
     return NextResponse.json({ error: "장소를 찾을 수 없습니다." }, { status: 404 });
   }
 
-  const friends = await prisma.friend.findMany({
-    where: { id: { in: friendIds }, userId },
-  });
+  const { data: friends } = await supabase
+    .from("friends")
+    .select("*")
+    .in("id", friendIds);
 
-  const friendsData: FriendCoord[] = friends.map((f) => ({
+  const friendsData: FriendCoord[] = (friends || []).map((f) => ({
     id: f.id,
     name: f.name,
-    address: f.addressDisplay || f.addressRaw,
+    address: f.address_display || f.address_raw,
     latitude: f.latitude || 0,
     longitude: f.longitude || 0,
   }));

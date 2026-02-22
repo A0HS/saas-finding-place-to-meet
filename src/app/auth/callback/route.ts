@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { prisma } from "@/lib/prisma";
 import { DUMMY_FRIENDS, DUMMY_PLACES } from "@/lib/dummyData";
 
 export async function GET(request: Request) {
@@ -14,31 +13,34 @@ export async function GET(request: Request) {
     // Seed dummy data for new users
     if (data?.user) {
       const userId = data.user.id;
-      const friendCount = await prisma.friend.count({ where: { userId } });
-      if (friendCount === 0) {
-        await prisma.friend.createMany({
-          data: DUMMY_FRIENDS.map((f) => ({
-            userId,
+
+      const { count } = await supabase
+        .from("friends")
+        .select("*", { count: "exact", head: true });
+
+      if (!count || count === 0) {
+        await supabase.from("friends").insert(
+          DUMMY_FRIENDS.map((f) => ({
+            user_id: userId,
             name: f.name,
-            addressRaw: f.addressRaw,
-            addressDisplay: f.addressDisplay,
+            address_raw: f.address_raw,
+            address_display: f.address_display,
             latitude: f.latitude,
             longitude: f.longitude,
-          })),
-        });
-        for (const p of DUMMY_PLACES) {
-          await prisma.place.create({
-            data: {
-              userId,
-              name: p.name,
-              addressRaw: p.addressRaw,
-              addressDisplay: p.addressDisplay,
-              latitude: p.latitude,
-              longitude: p.longitude,
-              categoryId: null,
-            },
-          });
-        }
+          }))
+        );
+
+        await supabase.from("places").insert(
+          DUMMY_PLACES.map((p) => ({
+            user_id: userId,
+            name: p.name,
+            address_raw: p.address_raw,
+            address_display: p.address_display,
+            latitude: p.latitude,
+            longitude: p.longitude,
+            category_id: null,
+          }))
+        );
       }
     }
   }

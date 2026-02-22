@@ -7,8 +7,8 @@ import { DUMMY_FRIENDS, DUMMY_PLACES } from "@/lib/dummyData";
 interface Friend {
   id: string;
   name: string;
-  addressRaw: string;
-  addressDisplay: string | null;
+  address_raw: string;
+  address_display: string | null;
   latitude: number | null;
   longitude: number | null;
 }
@@ -16,8 +16,8 @@ interface Friend {
 interface Place {
   id: string;
   name: string;
-  addressRaw: string;
-  addressDisplay: string | null;
+  address_raw: string;
+  address_display: string | null;
   latitude: number | null;
   longitude: number | null;
 }
@@ -52,6 +52,10 @@ export default function DecidePage() {
   const markersRef = useRef<unknown[]>([]);
   const polylinesRef = useRef<unknown[]>([]);
   const infoWindowsRef = useRef<unknown[]>([]);
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const markerMetasRef = useRef<{ marker: any; label: string; color: string }[]>([]);
+  const zoomListenerRef = useRef<any>(null);
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   useEffect(() => {
     const supabase = createBrowserClient();
@@ -95,9 +99,15 @@ export default function DecidePage() {
     markersRef.current.forEach((m: any) => m.setMap(null));
     polylinesRef.current.forEach((p: any) => p.setMap(null));
     infoWindowsRef.current.forEach((i: any) => i.close());
+    if (zoomListenerRef.current) {
+      const naverMaps = (window as any).naver?.maps;
+      if (naverMaps) naverMaps.Event.removeListener(zoomListenerRef.current);
+      zoomListenerRef.current = null;
+    }
     markersRef.current = [];
     polylinesRef.current = [];
     infoWindowsRef.current = [];
+    markerMetasRef.current = [];
     /* eslint-enable @typescript-eslint/no-explicit-any */
   }, []);
 
@@ -109,6 +119,18 @@ export default function DecidePage() {
       if (!place.latitude || !place.longitude) return;
 
       clearMap();
+
+      function makeIcon(label: string, color: string, zoom: number) {
+        const scale = Math.max(0.35, Math.min(0.75, (zoom - 5) / 10));
+        const fontSize = Math.round(13 * scale);
+        const padV = Math.round(6 * scale);
+        const padH = Math.round(10 * scale);
+        const border = Math.max(1, Math.round(2 * scale));
+        return {
+          content: `<div style="background:${color};color:white;padding:${padV}px ${padH}px;border-radius:6px;font-size:${fontSize}px;font-weight:bold;white-space:nowrap;border:${border}px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);transition:all 0.15s ease;">${label}</div>`,
+          anchor: new naverMaps.Point(Math.round(40 * scale), Math.round(20 * scale)),
+        };
+      }
 
       const placePos = new naverMaps.LatLng(place.latitude, place.longitude);
 
@@ -125,17 +147,16 @@ export default function DecidePage() {
       }
 
       const map = mapInstanceRef.current as any;
+      const initialZoom = map.getZoom();
 
       // Destination marker
       const destMarker = new naverMaps.Marker({
         position: placePos,
         map,
-        icon: {
-          content: `<div style="background:#DC2626;color:white;padding:6px 10px;border-radius:6px;font-size:13px;font-weight:bold;white-space:nowrap;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);">${place.name}</div>`,
-          anchor: new naverMaps.Point(40, 20),
-        },
+        icon: makeIcon(place.name, "#DC2626", initialZoom),
       });
       markersRef.current.push(destMarker);
+      markerMetasRef.current.push({ marker: destMarker, label: place.name, color: "#DC2626" });
 
       const bounds = new naverMaps.LatLngBounds(placePos, placePos);
 
@@ -152,12 +173,10 @@ export default function DecidePage() {
         const marker = new naverMaps.Marker({
           position: friendPos,
           map,
-          icon: {
-            content: `<div style="background:${color};color:white;padding:6px 10px;border-radius:6px;font-size:13px;font-weight:bold;white-space:nowrap;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);">${result.friendName}</div>`,
-            anchor: new naverMaps.Point(40, 20),
-          },
+          icon: makeIcon(result.friendName, color, initialZoom),
         });
         markersRef.current.push(marker);
+        markerMetasRef.current.push({ marker, label: result.friendName, color });
 
         // Route polyline
         if (result.path && result.path.length > 0) {
@@ -206,6 +225,13 @@ export default function DecidePage() {
         infoWindowsRef.current.push(infoWindow);
       });
 
+      // Resize labels on zoom change
+      zoomListenerRef.current = naverMaps.Event.addListener(map, "zoom_changed", (zoom: number) => {
+        markerMetasRef.current.forEach(({ marker, label, color }) => {
+          marker.setIcon(makeIcon(label, color, zoom));
+        });
+      });
+
       map.fitBounds(bounds, { top: 60, right: 60, bottom: 60, left: 60 });
       /* eslint-enable @typescript-eslint/no-explicit-any */
     },
@@ -249,7 +275,7 @@ export default function DecidePage() {
           demoFriends: selectedFriends.map((f) => ({
             id: f.id,
             name: f.name,
-            address: f.addressDisplay || f.addressRaw,
+            address: f.address_display || f.address_raw,
             latitude: f.latitude || 0,
             longitude: f.longitude || 0,
           })),
@@ -328,7 +354,7 @@ export default function DecidePage() {
                   <div>
                     <span className="text-sm font-medium text-gray-900">{friend.name}</span>
                     <span className="text-xs text-gray-500 ml-2">
-                      {friend.addressDisplay || friend.addressRaw}
+                      {friend.address_display || friend.address_raw}
                     </span>
                     {!friend.latitude && (
                       <span className="text-xs text-yellow-600 ml-2">(좌표 미확인)</span>
@@ -351,7 +377,7 @@ export default function DecidePage() {
             <option value="">장소를 선택하세요</option>
             {places.map((place) => (
               <option key={place.id} value={place.id}>
-                {place.name} - {place.addressDisplay || place.addressRaw}
+                {place.name} - {place.address_display || place.address_raw}
               </option>
             ))}
           </select>

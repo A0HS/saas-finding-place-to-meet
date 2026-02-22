@@ -1,51 +1,54 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { getAuthUserId } from "@/lib/auth";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await getAuthUserId();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
   const body = await request.json();
-  const { name, addressRaw, addressDisplay, categoryId, latitude, longitude } = body;
+  const { name, address_raw, address_display, category_id, latitude, longitude } = body;
 
-  // Verify ownership
-  const existing = await prisma.place.findFirst({ where: { id, userId } });
-  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const updates: Record<string, unknown> = {};
+  if (name !== undefined) updates.name = name.trim();
+  if (address_raw !== undefined) updates.address_raw = address_raw.trim();
+  if (address_display !== undefined) updates.address_display = address_display;
+  if (category_id !== undefined) updates.category_id = category_id || null;
+  if (latitude !== undefined) updates.latitude = latitude;
+  if (longitude !== undefined) updates.longitude = longitude;
 
-  const data: Record<string, unknown> = {};
-  if (name !== undefined) data.name = name.trim();
-  if (addressRaw !== undefined) data.addressRaw = addressRaw.trim();
-  if (addressDisplay !== undefined) data.addressDisplay = addressDisplay;
-  if (categoryId !== undefined) data.categoryId = categoryId || null;
-  if (latitude !== undefined) data.latitude = latitude;
-  if (longitude !== undefined) data.longitude = longitude;
+  const { data, error } = await supabase
+    .from("places")
+    .update(updates)
+    .eq("id", id)
+    .select("*, category:place_categories(*)")
+    .single();
 
-  const place = await prisma.place.update({
-    where: { id },
-    data,
-    include: { category: true },
-  });
-  return NextResponse.json(place);
+  if (error) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json(data);
 }
 
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await getAuthUserId();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
 
-  // Verify ownership
-  const existing = await prisma.place.findFirst({ where: { id, userId } });
-  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const { data, error } = await supabase
+    .from("places")
+    .delete()
+    .eq("id", id)
+    .select()
+    .single();
 
-  await prisma.place.delete({ where: { id } });
+  if (error) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true });
 }

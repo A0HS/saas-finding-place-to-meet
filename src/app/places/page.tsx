@@ -9,16 +9,16 @@ import { DUMMY_PLACES, DUMMY_CATEGORIES } from "@/lib/dummyData";
 interface Category {
   id: string;
   name: string;
-  _count?: { places: number };
+  places_count?: number;
 }
 
 interface Place {
   id: string;
   name: string;
-  categoryId: string | null;
+  category_id: string | null;
   category: Category | null;
-  addressRaw: string;
-  addressDisplay: string | null;
+  address_raw: string;
+  address_display: string | null;
   latitude: number | null;
   longitude: number | null;
 }
@@ -105,11 +105,11 @@ export default function PlacesPage() {
   function openEditPlaceModal(place: Place) {
     setEditingPlace(place);
     setFormName(place.name);
-    setFormAddress(place.addressRaw);
-    setFormCategoryId(place.categoryId || "");
+    setFormAddress(place.address_raw);
+    setFormCategoryId(place.category_id || "");
     setGeoResult(
       place.latitude && place.longitude
-        ? { lat: place.latitude, lng: place.longitude, displayAddress: place.addressDisplay || place.addressRaw }
+        ? { lat: place.latitude, lng: place.longitude, displayAddress: place.address_display || place.address_raw }
         : null
     );
     setGeoError("");
@@ -122,12 +122,12 @@ export default function PlacesPage() {
 
     const body: Record<string, unknown> = {
       name: formName,
-      addressRaw: formAddress,
-      categoryId: formCategoryId || null,
+      address_raw: formAddress,
+      category_id: formCategoryId || null,
     };
 
     if (geoResult) {
-      body.addressDisplay = geoResult.displayAddress;
+      body.address_display = geoResult.displayAddress;
       body.latitude = geoResult.lat;
       body.longitude = geoResult.lng;
     }
@@ -156,10 +156,10 @@ export default function PlacesPage() {
               ? {
                   ...p,
                   name: formName,
-                  addressRaw: formAddress,
-                  categoryId: formCategoryId || null,
+                  address_raw: formAddress,
+                  category_id: formCategoryId || null,
                   category: cat,
-                  addressDisplay: geoResult?.displayAddress || p.addressDisplay,
+                  address_display: geoResult?.displayAddress || p.address_display,
                   latitude: geoResult?.lat ?? p.latitude,
                   longitude: geoResult?.lng ?? p.longitude,
                 }
@@ -170,10 +170,10 @@ export default function PlacesPage() {
         const newPlace: Place = {
           id: `demo-${Date.now()}`,
           name: formName,
-          addressRaw: formAddress,
-          categoryId: formCategoryId || null,
+          address_raw: formAddress,
+          category_id: formCategoryId || null,
           category: cat,
-          addressDisplay: geoResult?.displayAddress || null,
+          address_display: geoResult?.displayAddress || null,
           latitude: geoResult?.lat || null,
           longitude: geoResult?.lng || null,
         };
@@ -190,13 +190,13 @@ export default function PlacesPage() {
     setIsBatchGeocoding(true);
     for (const place of ungeocoded) {
       try {
-        const result = await geocodeAddress(place.addressRaw);
+        const result = await geocodeAddress(place.address_raw);
         if (isAuth) {
           await fetch(`/api/places/${place.id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              addressDisplay: result.displayAddress,
+              address_display: result.displayAddress,
               latitude: result.lat,
               longitude: result.lng,
             }),
@@ -205,7 +205,7 @@ export default function PlacesPage() {
           setPlaces((prev) =>
             prev.map((p) =>
               p.id === place.id
-                ? { ...p, addressDisplay: result.displayAddress, latitude: result.lat, longitude: result.lng }
+                ? { ...p, address_display: result.displayAddress, latitude: result.lat, longitude: result.lng }
                 : p
             )
           );
@@ -272,7 +272,7 @@ export default function PlacesPage() {
         const newCat: Category = {
           id: `demo-cat-${Date.now()}`,
           name: categoryFormName,
-          _count: { places: 0 },
+          places_count: 0,
         };
         setCategories((prev) => [...prev, newCat]);
       }
@@ -292,7 +292,7 @@ export default function PlacesPage() {
       }
       fetchCategories();
     } else {
-      const placeCount = places.filter((p) => p.categoryId === id).length;
+      const placeCount = places.filter((p) => p.category_id === id).length;
       if (placeCount > 0) {
         alert(`이 카테고리를 사용하는 장소가 ${placeCount}개 있습니다. 먼저 해당 장소의 카테고리를 변경해주세요.`);
         return;
@@ -302,7 +302,7 @@ export default function PlacesPage() {
   }
 
   const filteredPlaces = filterCategoryId
-    ? places.filter((p) => p.categoryId === filterCategoryId)
+    ? places.filter((p) => p.category_id === filterCategoryId)
     : places;
 
   if (isAuth === null) {
@@ -408,7 +408,7 @@ export default function PlacesPage() {
                           <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm font-medium text-gray-900 whitespace-nowrap">{place.name}</td>
                           <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm text-gray-600 whitespace-nowrap">{place.category?.name || "-"}</td>
                           <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm text-gray-600">
-                            {place.addressDisplay || place.addressRaw}
+                            {place.address_display || place.address_raw}
                           </td>
                           <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm">
                             {place.latitude ? (
@@ -451,7 +451,7 @@ export default function PlacesPage() {
               <>
                 <NaverMap lat={previewPlace.latitude} lng={previewPlace.longitude} />
                 <p className="mt-2 text-sm text-gray-600">
-                  {previewPlace.name} - {previewPlace.addressDisplay || previewPlace.addressRaw}
+                  {previewPlace.name} - {previewPlace.address_display || previewPlace.address_raw}
                 </p>
               </>
             ) : (
@@ -495,7 +495,7 @@ export default function PlacesPage() {
                       <tr key={category.id} className="hover:bg-gray-50">
                         <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm font-medium text-gray-900">{category.name}</td>
                         <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm text-gray-600">
-                          {category._count?.places ?? 0}개
+                          {category.places_count ?? 0}개
                         </td>
                         <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm text-right space-x-2">
                           <button

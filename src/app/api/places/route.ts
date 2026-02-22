@@ -1,38 +1,43 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { getAuthUserId } from "@/lib/auth";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET() {
-  const userId = await getAuthUserId();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const places = await prisma.place.findMany({
-    where: { userId },
-    include: { category: true },
-    orderBy: { createdAt: "desc" },
-  });
-  return NextResponse.json(places);
+  const { data, error } = await supabase
+    .from("places")
+    .select("*, category:place_categories(*)")
+    .order("created_at", { ascending: false });
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json(data);
 }
 
 export async function POST(request: Request) {
-  const userId = await getAuthUserId();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { name, addressRaw, categoryId } = body;
+  const { name, address_raw, category_id } = body;
 
-  if (!name?.trim() || !addressRaw?.trim()) {
+  if (!name?.trim() || !address_raw?.trim()) {
     return NextResponse.json({ error: "장소명과 주소는 필수입니다." }, { status: 400 });
   }
 
-  const place = await prisma.place.create({
-    data: {
-      userId,
+  const { data, error } = await supabase
+    .from("places")
+    .insert({
+      user_id: user.id,
       name: name.trim(),
-      addressRaw: addressRaw.trim(),
-      categoryId: categoryId || null,
-    },
-    include: { category: true },
-  });
-  return NextResponse.json(place, { status: 201 });
+      address_raw: address_raw.trim(),
+      category_id: category_id || null,
+    })
+    .select("*, category:place_categories(*)")
+    .single();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json(data, { status: 201 });
 }
