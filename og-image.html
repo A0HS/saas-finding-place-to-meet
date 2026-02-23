@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>OG Image - 이동 거리 계산기</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 1200px;
+      height: 630px;
+      overflow: hidden;
+      font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+    }
+
+    .container {
+      position: relative;
+      width: 1200px;
+      height: 630px;
+      display: flex;
+    }
+
+    /* Background: full map image */
+    .bg {
+      position: absolute;
+      inset: 0;
+      background: url('./image.png') center/cover no-repeat;
+    }
+
+    /* Semi-transparent overlay */
+    .overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(17, 24, 39, 0.5);
+    }
+
+    /* Left: text content */
+    .left {
+      position: relative;
+      z-index: 1;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 60px 50px 60px 70px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(59,130,246,0.85);
+      border: 1px solid rgba(96,165,250,0.9);
+      color: #ffffff;
+      font-size: 17px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 20px;
+      width: fit-content;
+      margin-bottom: 28px;
+      letter-spacing: 0.5px;
+    }
+
+    .badge-dot {
+      width: 7px;
+      height: 7px;
+      background: rgba(96,165,250,0.9);
+      border-radius: 50%;
+    }
+
+    .title {
+      font-size: 52px;
+      font-weight: 900;
+      color: #ffffff;
+      line-height: 1.2;
+      margin-bottom: 28px;
+      letter-spacing: -0.5px;
+      text-shadow: 0 2px 16px rgba(0,0,0,0.5);
+      white-space: nowrap;
+    }
+
+    .desc {
+      font-size: 22px;
+      color: rgba(243,244,246,0.95);
+      line-height: 1.7;
+      text-shadow: 0 1px 8px rgba(0,0,0,0.4);
+      font-weight: 400;
+    }
+
+    /* Right: phone mockup */
+    .right {
+      position: relative;
+      z-index: 1;
+      width: 420px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding-right: 40px;
+    }
+
+    .phone {
+      position: relative;
+      width: 290px;
+      height: 560px;
+      background: #000;
+      border-radius: 36px;
+      padding: 12px;
+      box-shadow:
+        0 0 0 2px #333,
+        0 25px 60px rgba(0,0,0,0.5),
+        0 0 80px rgba(59,130,246,0.15);
+    }
+
+    .phone::before {
+      content: '';
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100px;
+      height: 28px;
+      background: #000;
+      border-radius: 0 0 16px 16px;
+      z-index: 3;
+    }
+
+    .phone-screen {
+      width: 100%;
+      height: 100%;
+      border-radius: 24px;
+      overflow: hidden;
+      position: relative;
+      background: #f3f4f6;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* App header */
+    .app-header {
+      background: #fff;
+      padding: 38px 14px 10px 14px;
+      border-bottom: 1px solid #e5e7eb;
+      flex-shrink: 0;
+    }
+
+    .app-header-row {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    .app-rank {
+      font-size: 17px;
+      font-weight: 800;
+      color: #2563eb;
+    }
+
+    .app-place-name {
+      font-size: 17px;
+      font-weight: 700;
+      color: #111827;
+    }
+
+    .app-address {
+      font-size: 12px;
+      color: #9ca3af;
+      margin-top: 3px;
+    }
+
+    /* Dashboard cards */
+    .app-cards {
+      display: flex;
+      gap: 5px;
+      padding: 8px 8px 4px 8px;
+      flex-shrink: 0;
+    }
+
+    .app-card {
+      flex: 1;
+      background: #fff;
+      border-radius: 8px;
+      padding: 7px 4px;
+      text-align: center;
+      border: 1px solid #e5e7eb;
+    }
+
+    .app-card-label {
+      font-size: 10px;
+      color: #6b7280;
+      margin-bottom: 2px;
+    }
+
+    .app-card-value {
+      font-size: 19px;
+      font-weight: 700;
+    }
+
+    .app-card-value.gray { color: #111827; }
+    .app-card-value.blue { color: #2563eb; }
+    .app-card-value.green { color: #16a34a; }
+
+    /* Map */
+    .app-map {
+      margin: 5px 8px;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid #e5e7eb;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .app-map img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* Results */
+    .app-results {
+      flex-shrink: 0;
+      padding: 4px 8px 10px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .result-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 6px 10px;
+    }
+
+    .result-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .result-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #111827;
+      flex-shrink: 0;
+    }
+
+    .result-info {
+      font-size: 12px;
+      color: #6b7280;
+      margin-left: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="bg"></div>
+    <div class="overlay"></div>
+
+    <!-- Left: Text -->
+    <div class="left">
+      <div class="badge">
+        <span class="badge-dot"></span>
+        모임 장소 최적화 서비스
+      </div>
+      <h1 class="title">이동 거리 &amp; 소요 시간 계산기</h1>
+      <p class="desc">
+        친구들의 위치에서 각 장소까지의<br/>
+        이동시간을 비교하여 최적의 모임 장소를 찾아보세요
+      </p>
+    </div>
+
+    <!-- Right: Phone Mockup -->
+    <div class="right">
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="app-header">
+            <div class="app-header-row">
+              <span class="app-rank">#1</span>
+              <span class="app-place-name">약속 장소</span>
+            </div>
+            <div class="app-address">서울특별시 서초구 신반포로 176</div>
+          </div>
+          <div class="app-cards">
+            <div class="app-card">
+              <div class="app-card-label">참석자 수</div>
+              <div class="app-card-value gray">3명</div>
+            </div>
+            <div class="app-card">
+              <div class="app-card-label">총 이동시간</div>
+              <div class="app-card-value blue">48분</div>
+            </div>
+            <div class="app-card">
+              <div class="app-card-label">평균 이동시간</div>
+              <div class="app-card-value green">16분</div>
+            </div>
+          </div>
+          <div class="app-map">
+            <img src="./image2.png" alt="경로 지도" />
+          </div>
+          <div class="app-results">
+            <div class="result-item">
+              <div class="result-dot" style="background:#F87171;"></div>
+              <span class="result-name">신민수</span>
+              <span class="result-info">9.7km, 16분</span>
+            </div>
+            <div class="result-item">
+              <div class="result-dot" style="background:#60A5FA;"></div>
+              <span class="result-name">신대우</span>
+              <span class="result-info">7.1km, 16분</span>
+            </div>
+            <div class="result-item">
+              <div class="result-dot" style="background:#4ADE80;"></div>
+              <span class="result-name">안현수</span>
+              <span class="result-info">13.0km, 16분</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

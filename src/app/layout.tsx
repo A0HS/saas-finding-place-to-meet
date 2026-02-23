@@ -9,16 +9,25 @@ export const metadata: Metadata = {
   description: "이동시간을 계산하여 최적의 모임 장소를 찾아보세요",
   viewport: "width=device-width, initial-scale=1",
   openGraph: {
-    title: "이동 거리 계산기",
-    description: "이동시간을 계산하여 최적의 모임 장소를 찾아보세요",
+    title: "이동 거리 & 소요 시간 계산기",
+    description: "친구들의 위치에서 각 장소까지의 이동시간을 비교하여 최적의 모임 장소를 찾아보세요",
     type: "website",
     locale: "ko_KR",
     siteName: "이동 거리 계산기",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "이동 거리 & 소요 시간 계산기",
+      },
+    ],
   },
   twitter: {
-    card: "summary",
-    title: "이동 거리 계산기",
-    description: "이동시간을 계산하여 최적의 모임 장소를 찾아보세요",
+    card: "summary_large_image",
+    title: "이동 거리 & 소요 시간 계산기",
+    description: "친구들의 위치에서 각 장소까지의 이동시간을 비교하여 최적의 모임 장소를 찾아보세요",
+    images: ["/og-image.png"],
   },
 };
 
