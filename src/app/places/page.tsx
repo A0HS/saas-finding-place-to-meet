@@ -85,7 +85,7 @@ export default function PlacesPage() {
       const result = await geocodeAddress(formAddress);
       setGeoResult(result);
     } catch (err) {
-      setGeoError(err instanceof Error ? err.message : "주소 확인 중 오류가 발생했습니다.");
+      setGeoError(err instanceof Error ? err.message : "좌표 변환에 실패했습니다. 네이버 지도 API에서 변환 가능한 주소를 입력해주세요.");
     } finally {
       setIsGeocoding(false);
     }
@@ -120,17 +120,19 @@ export default function PlacesPage() {
     e.preventDefault();
     if (!formName.trim() || !formAddress.trim()) return;
 
+    if (!geoResult) {
+      setGeoError("주소 확인을 먼저 진행해주세요. 네이버 지도 API로 좌표 변환이 가능한 주소를 입력해주세요.");
+      return;
+    }
+
     const body: Record<string, unknown> = {
       name: formName,
       address_raw: formAddress,
       category_id: formCategoryId || null,
+      address_display: geoResult.displayAddress,
+      latitude: geoResult.lat,
+      longitude: geoResult.lng,
     };
-
-    if (geoResult) {
-      body.address_display = geoResult.displayAddress;
-      body.latitude = geoResult.lat;
-      body.longitude = geoResult.lng;
-    }
 
     if (isAuth) {
       if (editingPlace) {
@@ -367,7 +369,7 @@ export default function PlacesPage() {
                     disabled={isBatchGeocoding}
                     className="px-3 py-2 text-sm sm:text-base sm:px-4 bg-gray-700 text-white rounded-lg hover:bg-gray-800 disabled:bg-gray-300 transition-colors"
                   >
-                    {isBatchGeocoding ? "확인 중..." : "일괄 주소 확인"}
+                    {isBatchGeocoding ? "확인 중..." : "좌표 재확인"}
                   </button>
                 )}
                 <button
@@ -410,7 +412,7 @@ export default function PlacesPage() {
                           <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm text-gray-600">
                             {place.address_display || place.address_raw}
                           </td>
-                          <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm">
+                          <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm whitespace-nowrap">
                             {place.latitude ? (
                               <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
                                 확인됨

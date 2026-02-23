@@ -21,20 +21,25 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { name, address_raw, category_id } = body;
+  const { name, address_raw, category_id, address_display, latitude, longitude } = body;
 
   if (!name?.trim() || !address_raw?.trim()) {
     return NextResponse.json({ error: "장소명과 주소는 필수입니다." }, { status: 400 });
   }
 
+  const row: Record<string, unknown> = {
+    user_id: user.id,
+    name: name.trim(),
+    address_raw: address_raw.trim(),
+    category_id: category_id || null,
+  };
+  if (address_display !== undefined) row.address_display = address_display;
+  if (latitude !== undefined) row.latitude = latitude;
+  if (longitude !== undefined) row.longitude = longitude;
+
   const { data, error } = await supabase
     .from("places")
-    .insert({
-      user_id: user.id,
-      name: name.trim(),
-      address_raw: address_raw.trim(),
-      category_id: category_id || null,
-    })
+    .insert(row)
     .select("*, category:place_categories(*)")
     .single();
 

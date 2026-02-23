@@ -71,13 +71,36 @@ export const DUMMY_PLACES: DemoPlace[] = [
   {
     id: "demo-place-1",
     name: "을지로입구역 스타벅스",
-    category_id: null,
-    category: null,
+    category_id: "demo-cat-1",
+    category: { id: "demo-cat-1", name: "카페" },
     address_raw: "서울 중구 을지로 65",
     address_display: "서울특별시 중구 을지로 65",
     latitude: 37.5660,
     longitude: 126.9827,
   },
+  {
+    id: "demo-place-2",
+    name: "홍대입구역 음식점",
+    category_id: "demo-cat-2",
+    category: { id: "demo-cat-2", name: "음식점" },
+    address_raw: "서울 마포구 양화로 186",
+    address_display: "서울특별시 마포구 양화로 186",
+    latitude: 37.5571,
+    longitude: 126.9246,
+  },
+  {
+    id: "demo-place-3",
+    name: "강남역 투썸플레이스",
+    category_id: "demo-cat-1",
+    category: { id: "demo-cat-1", name: "카페" },
+    address_raw: "서울 강남구 강남대로 396",
+    address_display: "서울특별시 강남구 강남대로 396",
+    latitude: 37.4979,
+    longitude: 127.0276,
+  },
 ];
 
-export const DUMMY_CATEGORIES: DemoCategory[] = [];
+export const DUMMY_CATEGORIES: DemoCategory[] = [
+  { id: "demo-cat-1", name: "카페", places_count: 2 },
+  { id: "demo-cat-2", name: "음식점", places_count: 1 },
+];

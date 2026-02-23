@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createBrowserClient } from "@/lib/supabase/client";
-import { DUMMY_FRIENDS, DUMMY_PLACES } from "@/lib/dummyData";
+import { DUMMY_FRIENDS, DUMMY_PLACES, DUMMY_CATEGORIES } from "@/lib/dummyData";
+import type { DemoCategory } from "@/lib/dummyData";
 
 interface Friend {
   id: string;
@@ -16,6 +17,8 @@ interface Friend {
 interface Place {
   id: string;
   name: string;
+  category_id: string | null;
+  category: { id: string; name: string } | null;
   address_raw: string;
   address_display: string | null;
   latitude: number | null;
@@ -32,29 +35,38 @@ interface TravelResult {
   error?: string;
 }
 
+interface PlaceResult {
+  place: Place;
+  items: TravelResult[];
+  totalMinutes: number;
+  averageMinutes: number;
+}
+
+const PLACE_MARKER_COLOR = "#1F2937";
+const MARKER_COLORS = [
+  "#F87171", "#60A5FA", "#4ADE80", "#FACC15", "#A78BFA",
+  "#F472B6", "#22D3EE", "#FBBF24", "#34D399", "#FB7185",
+];
 const ROUTE_COLORS = [
-  "#FF3B30", "#007AFF", "#34C759", "#FF9500", "#AF52DE",
-  "#FF2D55", "#5AC8FA", "#FFCC00", "#00C7BE", "#FF6482",
+  "#DC2626", "#2563EB", "#16A34A", "#CA8A04", "#7C3AED",
+  "#DB2777", "#0891B2", "#D97706", "#059669", "#E11D48",
 ];
 
 export default function DecidePage() {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [places, setPlaces] = useState<Place[]>([]);
+  const [categories, setCategories] = useState<DemoCategory[]>([]);
+  const [filterCategoryId, setFilterCategoryId] = useState("");
   const [isAuth, setIsAuth] = useState<boolean | null>(null);
   const [selectedFriendIds, setSelectedFriendIds] = useState<Set<string>>(new Set());
-  const [selectedPlaceId, setSelectedPlaceId] = useState("");
-  const [results, setResults] = useState<TravelResult[]>([]);
+  const [selectedPlaceIds, setSelectedPlaceIds] = useState<Set<string>>(new Set());
+  const [placeResults, setPlaceResults] = useState<PlaceResult[]>([]);
   const [isCalculating, setIsCalculating] = useState(false);
-  const [calculatedPlaceId, setCalculatedPlaceId] = useState("");
 
-  const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<unknown>(null);
-  const markersRef = useRef<unknown[]>([]);
-  const polylinesRef = useRef<unknown[]>([]);
-  const infoWindowsRef = useRef<unknown[]>([]);
+  const mapRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const mapInstancesRef = useRef<unknown[]>([]);
   /* eslint-disable @typescript-eslint/no-explicit-any */
-  const markerMetasRef = useRef<{ marker: any; label: string; color: string }[]>([]);
-  const zoomListenerRef = useRef<any>(null);
+  const mapDataRef = useRef<{ markers: any[]; polylines: any[]; infoWindows: any[]; markerMetas: { marker: any; label: string; color: string }[]; zoomListener: any }[]>([]);
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
   useEffect(() => {
@@ -65,14 +77,17 @@ export default function DecidePage() {
         Promise.all([
           fetch("/api/friends").then((r) => r.json()),
           fetch("/api/places").then((r) => r.json()),
-        ]).then(([friendsData, placesData]) => {
+          fetch("/api/categories").then((r) => r.json()),
+        ]).then(([friendsData, placesData, categoriesData]) => {
           setFriends(friendsData);
           setPlaces(placesData);
+          setCategories(categoriesData);
         });
       } else {
         setIsAuth(false);
         setFriends([...DUMMY_FRIENDS]);
         setPlaces([...DUMMY_PLACES]);
+        setCategories([...DUMMY_CATEGORIES]);
       }
     });
   }, []);
@@ -94,31 +109,67 @@ export default function DecidePage() {
     }
   }
 
-  const clearMap = useCallback(() => {
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    markersRef.current.forEach((m: any) => m.setMap(null));
-    polylinesRef.current.forEach((p: any) => p.setMap(null));
-    infoWindowsRef.current.forEach((i: any) => i.close());
-    if (zoomListenerRef.current) {
-      const naverMaps = (window as any).naver?.maps;
-      if (naverMaps) naverMaps.Event.removeListener(zoomListenerRef.current);
-      zoomListenerRef.current = null;
+  function togglePlace(id: string) {
+    setSelectedPlaceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const filteredPlaces = filterCategoryId === ""
+    ? places
+    : filterCategoryId === "uncategorized"
+      ? places.filter((p) => !p.category_id)
+      : places.filter((p) => p.category_id === filterCategoryId);
+
+  function selectAllPlaces() {
+    const filteredIds = new Set(filteredPlaces.map((p) => p.id));
+    const allFilteredSelected = filteredPlaces.length > 0 && filteredPlaces.every((p) => selectedPlaceIds.has(p.id));
+    if (allFilteredSelected) {
+      setSelectedPlaceIds((prev) => {
+        const next = new Set(prev);
+        filteredIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    } else {
+      setSelectedPlaceIds((prev) => new Set([...prev, ...filteredIds]));
     }
-    markersRef.current = [];
-    polylinesRef.current = [];
-    infoWindowsRef.current = [];
-    markerMetasRef.current = [];
+  }
+
+  const clearMapAt = useCallback((index: number) => {
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const data = mapDataRef.current[index];
+    if (!data) return;
+    data.markers.forEach((m: any) => m.setMap(null));
+    data.polylines.forEach((p: any) => p.setMap(null));
+    data.infoWindows.forEach((i: any) => i.close());
+    if (data.zoomListener) {
+      const naverMaps = (window as any).naver?.maps;
+      if (naverMaps) naverMaps.Event.removeListener(data.zoomListener);
+    }
+    mapDataRef.current[index] = { markers: [], polylines: [], infoWindows: [], markerMetas: [], zoomListener: null };
     /* eslint-enable @typescript-eslint/no-explicit-any */
   }, []);
 
-  const drawRoutes = useCallback(
-    (travelResults: TravelResult[], place: Place) => {
+  const clearAllMaps = useCallback(() => {
+    for (let i = 0; i < mapDataRef.current.length; i++) {
+      clearMapAt(i);
+    }
+    mapInstancesRef.current = [];
+    mapDataRef.current = [];
+  }, [clearMapAt]);
+
+  const drawRoutesAt = useCallback(
+    (index: number, travelResults: TravelResult[], place: Place) => {
       /* eslint-disable @typescript-eslint/no-explicit-any */
       const naverMaps = (window as any).naver?.maps;
-      if (!naverMaps || !mapRef.current) return;
+      const container = mapRefs.current[index];
+      if (!naverMaps || !container) return;
       if (!place.latitude || !place.longitude) return;
 
-      clearMap();
+      clearMapAt(index);
 
       function makeIcon(label: string, color: string, zoom: number) {
         const scale = Math.max(0.35, Math.min(0.75, (zoom - 5) / 10));
@@ -134,35 +185,35 @@ export default function DecidePage() {
 
       const placePos = new naverMaps.LatLng(place.latitude, place.longitude);
 
-      if (!mapInstanceRef.current) {
-        mapInstanceRef.current = new naverMaps.Map(mapRef.current, {
-          center: placePos,
-          zoom: 11,
-          zoomControl: true,
-          zoomControlOptions: { position: naverMaps.Position.TOP_RIGHT },
-        });
-      } else {
-        (mapInstanceRef.current as any).setCenter(placePos);
-        (mapInstanceRef.current as any).setZoom(11);
-      }
+      const map = new naverMaps.Map(container, {
+        center: placePos,
+        zoom: 11,
+        zoomControl: true,
+        zoomControlOptions: { position: naverMaps.Position.TOP_RIGHT },
+      });
+      mapInstancesRef.current[index] = map;
 
-      const map = mapInstanceRef.current as any;
+      const data: typeof mapDataRef.current[0] = { markers: [], polylines: [], infoWindows: [], markerMetas: [], zoomListener: null };
+      mapDataRef.current[index] = data;
+
       const initialZoom = map.getZoom();
 
-      // Destination marker
+      // Destination marker (dark, on top)
       const destMarker = new naverMaps.Marker({
         position: placePos,
         map,
-        icon: makeIcon(place.name, "#DC2626", initialZoom),
+        zIndex: 200,
+        icon: makeIcon(place.name, PLACE_MARKER_COLOR, initialZoom),
       });
-      markersRef.current.push(destMarker);
-      markerMetasRef.current.push({ marker: destMarker, label: place.name, color: "#DC2626" });
+      data.markers.push(destMarker);
+      data.markerMetas.push({ marker: destMarker, label: place.name, color: PLACE_MARKER_COLOR });
 
       const bounds = new naverMaps.LatLngBounds(placePos, placePos);
 
       travelResults.forEach((result, idx) => {
         if (result.error || !result.durationMin) return;
-        const color = ROUTE_COLORS[idx % ROUTE_COLORS.length];
+        const markerColor = MARKER_COLORS[idx % MARKER_COLORS.length];
+        const routeColor = ROUTE_COLORS[idx % ROUTE_COLORS.length];
         const friend = friends.find((f) => f.id === result.friendId);
         if (!friend?.latitude || !friend?.longitude) return;
 
@@ -173,10 +224,11 @@ export default function DecidePage() {
         const marker = new naverMaps.Marker({
           position: friendPos,
           map,
-          icon: makeIcon(result.friendName, color, initialZoom),
+          zIndex: 100,
+          icon: makeIcon(result.friendName, markerColor, initialZoom),
         });
-        markersRef.current.push(marker);
-        markerMetasRef.current.push({ marker, label: result.friendName, color });
+        data.markers.push(marker);
+        data.markerMetas.push({ marker, label: result.friendName, color: markerColor });
 
         // Route polyline
         if (result.path && result.path.length > 0) {
@@ -188,22 +240,21 @@ export default function DecidePage() {
           const polyline = new naverMaps.Polyline({
             map,
             path: pathCoords,
-            strokeColor: color,
+            strokeColor: routeColor,
             strokeWeight: 4,
             strokeOpacity: 0.8,
           });
-          polylinesRef.current.push(polyline);
+          data.polylines.push(polyline);
         } else {
-          // No path data - draw straight line
           const polyline = new naverMaps.Polyline({
             map,
             path: [friendPos, placePos],
-            strokeColor: color,
+            strokeColor: routeColor,
             strokeWeight: 3,
             strokeOpacity: 0.5,
             strokeStyle: "dash",
           });
-          polylinesRef.current.push(polyline);
+          data.polylines.push(polyline);
         }
 
         // Info window
@@ -222,12 +273,12 @@ export default function DecidePage() {
             infoWindow.open(map, marker);
           }
         });
-        infoWindowsRef.current.push(infoWindow);
+        data.infoWindows.push(infoWindow);
       });
 
       // Resize labels on zoom change
-      zoomListenerRef.current = naverMaps.Event.addListener(map, "zoom_changed", (zoom: number) => {
-        markerMetasRef.current.forEach(({ marker, label, color }) => {
+      data.zoomListener = naverMaps.Event.addListener(map, "zoom_changed", (zoom: number) => {
+        data.markerMetas.forEach(({ marker, label, color }) => {
           marker.setIcon(makeIcon(label, color, zoom));
         });
       });
@@ -235,79 +286,85 @@ export default function DecidePage() {
       map.fitBounds(bounds, { top: 60, right: 60, bottom: 60, left: 60 });
       /* eslint-enable @typescript-eslint/no-explicit-any */
     },
-    [friends, clearMap]
+    [friends, clearMapAt]
   );
 
   useEffect(() => {
-    if (results.length === 0 || !calculatedPlaceId) return;
-    const place = places.find((p) => p.id === calculatedPlaceId);
-    if (place) {
-      const timer = setTimeout(() => drawRoutes(results, place), 100);
-      return () => clearTimeout(timer);
-    }
-  }, [results, calculatedPlaceId, places, drawRoutes]);
+    if (placeResults.length === 0) return;
+    const timer = setTimeout(() => {
+      placeResults.forEach((pr, idx) => {
+        drawRoutesAt(idx, pr.items, pr.place);
+      });
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [placeResults, drawRoutesAt]);
 
   async function handleCalculate() {
-    if (selectedFriendIds.size === 0 || !selectedPlaceId) {
+    if (selectedFriendIds.size === 0 || selectedPlaceIds.size === 0) {
       alert("친구와 장소를 선택해주세요.");
       return;
     }
 
     setIsCalculating(true);
-    setResults([]);
-    clearMap();
-    mapInstanceRef.current = null;
+    setPlaceResults([]);
+    clearAllMaps();
 
     try {
-      let requestBody: Record<string, unknown>;
+      const selectedPlaces = places.filter((p) => selectedPlaceIds.has(p.id));
+      const friendIdsArr = Array.from(selectedFriendIds);
 
-      if (isAuth) {
-        // Auth mode: send IDs
-        requestBody = {
-          friendIds: Array.from(selectedFriendIds),
-          placeId: selectedPlaceId,
-        };
-      } else {
-        // Demo mode: send coordinates directly
-        const selectedFriends = friends.filter((f) => selectedFriendIds.has(f.id));
-        const selectedPlace = places.find((p) => p.id === selectedPlaceId);
-        requestBody = {
-          demoFriends: selectedFriends.map((f) => ({
-            id: f.id,
-            name: f.name,
-            address: f.address_display || f.address_raw,
-            latitude: f.latitude || 0,
-            longitude: f.longitude || 0,
-          })),
-          demoPlace: {
-            latitude: selectedPlace?.latitude || 0,
-            longitude: selectedPlace?.longitude || 0,
-          },
-        };
-      }
+      const promises = selectedPlaces.map(async (place) => {
+        let requestBody: Record<string, unknown>;
 
-      const res = await fetch("/api/calculate-travel-times", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
+        if (isAuth) {
+          requestBody = {
+            friendIds: friendIdsArr,
+            placeId: place.id,
+          };
+        } else {
+          const selectedFriends = friends.filter((f) => selectedFriendIds.has(f.id));
+          requestBody = {
+            demoFriends: selectedFriends.map((f) => ({
+              id: f.id,
+              name: f.name,
+              address: f.address_display || f.address_raw,
+              latitude: f.latitude || 0,
+              longitude: f.longitude || 0,
+            })),
+            demoPlace: {
+              latitude: place.latitude || 0,
+              longitude: place.longitude || 0,
+            },
+          };
+        }
+
+        const res = await fetch("/api/calculate-travel-times", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        });
+
+        if (!res.ok) {
+          return { place, items: [], totalMinutes: 0, averageMinutes: 0 } as PlaceResult;
+        }
+
+        const data = await res.json();
+        const items: TravelResult[] = data.items;
+        const valid = items.filter((r) => !r.error && r.durationMin);
+        const totalMinutes = valid.reduce((sum, r) => sum + (r.durationMin || 0), 0);
+        const averageMinutes = valid.length > 0 ? totalMinutes / valid.length : 0;
+
+        return { place, items, totalMinutes, averageMinutes } as PlaceResult;
       });
 
-      if (!res.ok) {
-        alert("계산에 실패했습니다.");
-        return;
-      }
-
-      const data = await res.json();
-      setResults(data.items);
-      setCalculatedPlaceId(selectedPlaceId);
+      const results = await Promise.all(promises);
+      // Sort by average travel time (ascending)
+      results.sort((a, b) => a.averageMinutes - b.averageMinutes);
+      setPlaceResults(results);
     } finally {
       setIsCalculating(false);
     }
   }
-
-  const validResults = results.filter((r) => !r.error && r.durationMin);
-  const totalMinutes = validResults.reduce((sum, r) => sum + (r.durationMin || 0), 0);
-  const avgMinutes = validResults.length > 0 ? totalMinutes / validResults.length : 0;
 
   if (isAuth === null) {
     return <div className="text-center py-12 text-gray-400">로딩 중...</div>;
@@ -368,19 +425,56 @@ export default function DecidePage() {
 
         {/* Place Selection */}
         <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
-          <h2 className="text-base sm:text-lg font-semibold mb-4">장소 선택</h2>
-          <select
-            value={selectedPlaceId}
-            onChange={(e) => setSelectedPlaceId(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">장소를 선택하세요</option>
-            {places.map((place) => (
-              <option key={place.id} value={place.id}>
-                {place.name} - {place.address_display || place.address_raw}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <h2 className="text-base sm:text-lg font-semibold">장소 선택</h2>
+              <select
+                value={filterCategoryId}
+                onChange={(e) => setFilterCategoryId(e.target.value)}
+                className="px-2 py-1 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">전체 카테고리</option>
+                <option value="uncategorized">미분류</option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>{cat.name}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={selectAllPlaces}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              {filteredPlaces.length > 0 && filteredPlaces.every((p) => selectedPlaceIds.has(p.id)) ? "전체 해제" : "전체 선택"}
+            </button>
+          </div>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {filteredPlaces.length === 0 ? (
+              <p className="text-gray-400 text-sm">등록된 장소가 없습니다.</p>
+            ) : (
+              filteredPlaces.map((place) => (
+                <label
+                  key={place.id}
+                  className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedPlaceIds.has(place.id)}
+                    onChange={() => togglePlace(place.id)}
+                    className="w-4 h-4 text-blue-600 rounded"
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-gray-900">{place.category?.name ? `[${place.category.name}] ` : ""}{place.name}</span>
+                    <span className="text-xs text-gray-500 ml-2">
+                      {place.address_display || place.address_raw}
+                    </span>
+                    {!place.latitude && (
+                      <span className="text-xs text-yellow-600 ml-2">(좌표 미확인)</span>
+                    )}
+                  </div>
+                </label>
+              ))
+            )}
+          </div>
         </div>
       </div>
 
@@ -388,99 +482,113 @@ export default function DecidePage() {
       <div className="flex justify-center mb-6">
         <button
           onClick={handleCalculate}
-          disabled={isCalculating || selectedFriendIds.size === 0 || !selectedPlaceId}
+          disabled={isCalculating || selectedFriendIds.size === 0 || selectedPlaceIds.size === 0}
           className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors font-medium"
         >
-          {isCalculating ? "계산 중..." : "이동시간 계산하기"}
+          {isCalculating ? "계산 중..." : `이동시간 계산하기${selectedPlaceIds.size > 0 ? ` (${selectedPlaceIds.size}개 장소)` : ""}`}
         </button>
       </div>
 
-      {/* Results */}
-      {results.length > 0 && (
-        <>
-          {/* Dashboard Cards */}
-          <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6">
-            <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-6 text-center">
-              <p className="text-xs sm:text-sm text-gray-500 mb-1">참석자 수</p>
-              <p className="text-xl sm:text-3xl font-bold text-gray-900">{validResults.length}명</p>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-6 text-center">
-              <p className="text-xs sm:text-sm text-gray-500 mb-1">총 이동시간</p>
-              <p className="text-xl sm:text-3xl font-bold text-blue-600">{Math.round(totalMinutes)}분</p>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-6 text-center">
-              <p className="text-xs sm:text-sm text-gray-500 mb-1">평균 이동시간</p>
-              <p className="text-xl sm:text-3xl font-bold text-green-600">{Math.round(avgMinutes)}분</p>
-            </div>
-          </div>
+      {/* Results — per place */}
+      {placeResults.map((pr, placeIdx) => {
+        const validItems = pr.items.filter((r) => !r.error && r.durationMin);
+        return (
+          <section key={pr.place.id} className="mb-10">
+            <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <span className="text-blue-600">#{placeIdx + 1}</span>
+              {pr.place.name}
+              <span className="text-sm font-normal text-gray-500">
+                {pr.place.address_display || pr.place.address_raw}
+              </span>
+            </h2>
 
-          {/* Route Map */}
-          <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 mb-6">
-            <h3 className="text-sm font-medium text-gray-700 mb-3">경로 지도</h3>
-            <div ref={mapRef} className="w-full h-[300px] sm:h-[500px] rounded-lg" />
-            <div className="flex flex-wrap gap-3 mt-3">
-              {results.map((result, idx) =>
-                !result.error ? (
-                  <div key={result.friendId} className="flex items-center space-x-2 text-sm">
-                    <span
-                      className="w-3 h-3 rounded-full inline-block"
-                      style={{ backgroundColor: ROUTE_COLORS[idx % ROUTE_COLORS.length] }}
-                    />
-                    <span className="text-gray-700">
-                      {result.friendName} ({result.distanceKm?.toFixed(1)}km, {Math.round(result.durationMin || 0)}분)
-                    </span>
-                  </div>
-                ) : null
-              )}
+            {/* Dashboard Cards */}
+            <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4">
+              <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-6 text-center">
+                <p className="text-xs sm:text-sm text-gray-500 mb-1">참석자 수</p>
+                <p className="text-xl sm:text-3xl font-bold text-gray-900">{validItems.length}명</p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-6 text-center">
+                <p className="text-xs sm:text-sm text-gray-500 mb-1">총 이동시간</p>
+                <p className="text-xl sm:text-3xl font-bold text-blue-600">{Math.round(pr.totalMinutes)}분</p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-6 text-center">
+                <p className="text-xs sm:text-sm text-gray-500 mb-1">평균 이동시간</p>
+                <p className="text-xl sm:text-3xl font-bold text-green-600">{Math.round(pr.averageMinutes)}분</p>
+              </div>
             </div>
-          </div>
 
-          {/* Results Table */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[500px]">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-3 py-3 sm:px-6 text-left text-sm font-medium text-gray-500">색상</th>
-                    <th className="px-3 py-3 sm:px-6 text-left text-sm font-medium text-gray-500">이름</th>
-                    <th className="px-3 py-3 sm:px-6 text-left text-sm font-medium text-gray-500">출발 주소</th>
-                    <th className="px-3 py-3 sm:px-6 text-left text-sm font-medium text-gray-500">거리</th>
-                    <th className="px-3 py-3 sm:px-6 text-left text-sm font-medium text-gray-500">소요시간</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {results.map((result, idx) => (
-                    <tr key={result.friendId} className="hover:bg-gray-50">
-                      <td className="px-3 py-3 sm:px-6 sm:py-4">
-                        <span
-                          className="w-4 h-4 rounded-full inline-block"
-                          style={{ backgroundColor: ROUTE_COLORS[idx % ROUTE_COLORS.length] }}
-                        />
-                      </td>
-                      <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm font-medium text-gray-900 whitespace-nowrap">
-                        {result.friendName}
-                      </td>
-                      <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm text-gray-600">{result.fromAddress}</td>
-                      <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm text-gray-600 whitespace-nowrap">
-                        {result.error ? "-" : `${result.distanceKm?.toFixed(1)} km`}
-                      </td>
-                      <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm whitespace-nowrap">
-                        {result.error ? (
-                          <span className="text-red-600">{result.error}</span>
-                        ) : (
-                          <span className="font-medium text-blue-600">
-                            {Math.round(result.durationMin || 0)}분
-                          </span>
-                        )}
-                      </td>
+            {/* Route Map */}
+            <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 mb-4">
+              <h3 className="text-sm font-medium text-gray-700 mb-3">경로 지도</h3>
+              <div
+                ref={(el) => { mapRefs.current[placeIdx] = el; }}
+                className="w-full h-[300px] sm:h-[500px] rounded-lg"
+              />
+              <div className="flex flex-wrap gap-3 mt-3">
+                {pr.items.map((result, idx) =>
+                  !result.error ? (
+                    <div key={result.friendId} className="flex items-center space-x-2 text-sm">
+                      <span
+                        className="w-3 h-3 rounded-full inline-block"
+                        style={{ backgroundColor: MARKER_COLORS[idx % MARKER_COLORS.length] }}
+                      />
+                      <span className="text-gray-700">
+                        {result.friendName} ({result.distanceKm?.toFixed(1)}km, {Math.round(result.durationMin || 0)}분)
+                      </span>
+                    </div>
+                  ) : null
+                )}
+              </div>
+            </div>
+
+            {/* Results Table */}
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[500px]">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-3 sm:px-6 text-left text-sm font-medium text-gray-500">색상</th>
+                      <th className="px-3 py-3 sm:px-6 text-left text-sm font-medium text-gray-500">이름</th>
+                      <th className="px-3 py-3 sm:px-6 text-left text-sm font-medium text-gray-500">출발 주소</th>
+                      <th className="px-3 py-3 sm:px-6 text-left text-sm font-medium text-gray-500">거리</th>
+                      <th className="px-3 py-3 sm:px-6 text-left text-sm font-medium text-gray-500">소요시간</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {pr.items.map((result, idx) => (
+                      <tr key={result.friendId} className="hover:bg-gray-50">
+                        <td className="px-3 py-3 sm:px-6 sm:py-4">
+                          <span
+                            className="w-4 h-4 rounded-full inline-block"
+                            style={{ backgroundColor: MARKER_COLORS[idx % MARKER_COLORS.length] }}
+                          />
+                        </td>
+                        <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm font-medium text-gray-900 whitespace-nowrap">
+                          {result.friendName}
+                        </td>
+                        <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm text-gray-600">{result.fromAddress}</td>
+                        <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm text-gray-600 whitespace-nowrap">
+                          {result.error ? "-" : `${result.distanceKm?.toFixed(1)} km`}
+                        </td>
+                        <td className="px-3 py-3 sm:px-6 sm:py-4 text-sm whitespace-nowrap">
+                          {result.error ? (
+                            <span className="text-red-600">{result.error}</span>
+                          ) : (
+                            <span className="font-medium text-blue-600">
+                              {Math.round(result.durationMin || 0)}분
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
-        </>
-      )}
+          </section>
+        );
+      })}
     </div>
   );
 }
