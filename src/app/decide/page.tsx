@@ -62,6 +62,7 @@ export default function DecidePage() {
   const [selectedPlaceIds, setSelectedPlaceIds] = useState<Set<string>>(new Set());
   const [placeResults, setPlaceResults] = useState<PlaceResult[]>([]);
   const [isCalculating, setIsCalculating] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   const mapRefs = useRef<(HTMLDivElement | null)[]>([]);
   const mapInstancesRef = useRef<unknown[]>([]);
@@ -71,24 +72,24 @@ export default function DecidePage() {
 
   useEffect(() => {
     const supabase = createBrowserClient();
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
         setIsAuth(true);
-        Promise.all([
+        const [friendsData, placesData, categoriesData] = await Promise.all([
           fetch("/api/friends").then((r) => r.json()),
           fetch("/api/places").then((r) => r.json()),
           fetch("/api/categories").then((r) => r.json()),
-        ]).then(([friendsData, placesData, categoriesData]) => {
-          setFriends(friendsData);
-          setPlaces(placesData);
-          setCategories(categoriesData);
-        });
+        ]);
+        setFriends(friendsData);
+        setPlaces(placesData);
+        setCategories(categoriesData);
       } else {
         setIsAuth(false);
         setFriends([...DUMMY_FRIENDS]);
         setPlaces([...DUMMY_PLACES]);
         setCategories([...DUMMY_CATEGORIES]);
       }
+      setIsLoading(false);
     });
   }, []);
 
@@ -366,7 +367,7 @@ export default function DecidePage() {
     }
   }
 
-  if (isAuth === null) {
+  if (isAuth === null || isLoading) {
     return <div className="text-center py-12 text-gray-400">로딩 중...</div>;
   }
 

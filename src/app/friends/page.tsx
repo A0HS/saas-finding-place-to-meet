@@ -33,17 +33,19 @@ export default function FriendsPage() {
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [isBatchGeocoding, setIsBatchGeocoding] = useState(false);
   const [previewFriend, setPreviewFriend] = useState<Friend | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const supabase = createBrowserClient();
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
         setIsAuth(true);
-        fetchFriends();
+        await fetchFriends();
       } else {
         setIsAuth(false);
         setFriends([...DUMMY_FRIENDS]);
       }
+      setIsLoading(false);
     });
   }, []);
 
@@ -199,7 +201,7 @@ export default function FriendsPage() {
     if (previewFriend?.id === id) setPreviewFriend(null);
   }
 
-  if (isAuth === null) {
+  if (isAuth === null || isLoading) {
     return <div className="text-center py-12 text-gray-400">로딩 중...</div>;
   }
 

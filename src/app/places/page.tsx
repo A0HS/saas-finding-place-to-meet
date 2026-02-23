@@ -53,19 +53,20 @@ export default function PlacesPage() {
   const [isMapSearching, setIsMapSearching] = useState(false);
   const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
   const [mapSearchError, setMapSearchError] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const supabase = createBrowserClient();
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
         setIsAuth(true);
-        fetchPlaces();
-        fetchCategories();
+        await Promise.all([fetchPlaces(), fetchCategories()]);
       } else {
         setIsAuth(false);
         setPlaces([...DUMMY_PLACES]);
         setCategories([...DUMMY_CATEGORIES]);
       }
+      setIsLoading(false);
     });
   }, []);
 
@@ -373,13 +374,13 @@ export default function PlacesPage() {
     ? places.filter((p) => p.category_id === filterCategoryId)
     : places;
 
-  if (isAuth === null) {
+  if (isAuth === null || isLoading) {
     return <div className="text-center py-12 text-gray-400">로딩 중...</div>;
   }
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <div className="flex items-center gap-3">
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">장소 관리</h1>
           {!isAuth && (
@@ -387,6 +388,23 @@ export default function PlacesPage() {
               데모 모드
             </span>
           )}
+        </div>
+        <div className="flex space-x-2">
+          {places.some((p) => !p.latitude) && (
+            <button
+              onClick={handleBatchGeocode}
+              disabled={isBatchGeocoding}
+              className="px-3 py-2 text-sm sm:text-base sm:px-4 bg-gray-700 text-white rounded-lg hover:bg-gray-800 disabled:bg-gray-300 transition-colors"
+            >
+              {isBatchGeocoding ? "확인 중..." : "일괄 주소 확인"}
+            </button>
+          )}
+          <button
+            onClick={openAddPlaceModal}
+            className="px-3 py-2 text-sm sm:text-base sm:px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            + 장소 추가
+          </button>
         </div>
       </div>
 
@@ -417,7 +435,7 @@ export default function PlacesPage() {
       {activeTab === "places" ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+            <div className="mb-4">
               <select
                 value={filterCategoryId}
                 onChange={(e) => setFilterCategoryId(e.target.value)}
@@ -428,23 +446,6 @@ export default function PlacesPage() {
                   <option key={cat.id} value={cat.id}>{cat.name}</option>
                 ))}
               </select>
-              <div className="flex space-x-2">
-                {places.some((p) => !p.latitude) && (
-                  <button
-                    onClick={handleBatchGeocode}
-                    disabled={isBatchGeocoding}
-                    className="px-3 py-2 text-sm sm:text-base sm:px-4 bg-gray-700 text-white rounded-lg hover:bg-gray-800 disabled:bg-gray-300 transition-colors"
-                  >
-                    {isBatchGeocoding ? "확인 중..." : "좌표 재확인"}
-                  </button>
-                )}
-                <button
-                  onClick={openAddPlaceModal}
-                  className="px-3 py-2 text-sm sm:text-base sm:px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  + 장소 추가
-                </button>
-              </div>
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
