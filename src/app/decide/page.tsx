@@ -63,6 +63,7 @@ export default function DecidePage() {
   const [placeResults, setPlaceResults] = useState<PlaceResult[]>([]);
   const [isCalculating, setIsCalculating] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [markerScale, setMarkerScale] = useState(5);
 
   const mapRefs = useRef<(HTMLDivElement | null)[]>([]);
   const mapInstancesRef = useRef<unknown[]>([]);
@@ -139,6 +140,40 @@ export default function DecidePage() {
     }
   }
 
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const makeIcon = useCallback((label: string, color: string, zoom: number, scaleLevel: number) => {
+    const naverMaps = (window as any).naver?.maps;
+    if (!naverMaps) return undefined;
+    const baseScale = Math.max(0.35, Math.min(0.75, (zoom - 5) / 10));
+    const multiplier = 0.6 + (scaleLevel - 1) * 0.15; // 1=0.6x, 5=1.2x, 10=1.95x
+    const scale = baseScale * multiplier;
+    const fontSize = Math.round(13 * scale);
+    const padV = Math.round(6 * scale);
+    const padH = Math.round(10 * scale);
+    const border = Math.max(1, Math.round(2 * scale));
+    return {
+      content: `<div style="background:${color};color:white;padding:${padV}px ${padH}px;border-radius:6px;font-size:${fontSize}px;font-weight:bold;white-space:nowrap;border:${border}px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);transition:all 0.15s ease;">${label}</div>`,
+      anchor: new naverMaps.Point(Math.round(40 * scale), Math.round(20 * scale)),
+    };
+  }, []);
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+
+  // Update all marker icons when markerScale changes
+  useEffect(() => {
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    mapDataRef.current.forEach((data, idx) => {
+      if (!data) return;
+      const map = mapInstancesRef.current[idx] as any;
+      if (!map) return;
+      const zoom = map.getZoom();
+      data.markerMetas.forEach(({ marker, label, color }) => {
+        const icon = makeIcon(label, color, zoom, markerScale);
+        if (icon) marker.setIcon(icon);
+      });
+    });
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+  }, [markerScale, makeIcon]);
+
   const clearMapAt = useCallback((index: number) => {
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const data = mapDataRef.current[index];
@@ -172,18 +207,6 @@ export default function DecidePage() {
 
       clearMapAt(index);
 
-      function makeIcon(label: string, color: string, zoom: number) {
-        const scale = Math.max(0.35, Math.min(0.75, (zoom - 5) / 10));
-        const fontSize = Math.round(13 * scale);
-        const padV = Math.round(6 * scale);
-        const padH = Math.round(10 * scale);
-        const border = Math.max(1, Math.round(2 * scale));
-        return {
-          content: `<div style="background:${color};color:white;padding:${padV}px ${padH}px;border-radius:6px;font-size:${fontSize}px;font-weight:bold;white-space:nowrap;border:${border}px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);transition:all 0.15s ease;">${label}</div>`,
-          anchor: new naverMaps.Point(Math.round(40 * scale), Math.round(20 * scale)),
-        };
-      }
-
       const placePos = new naverMaps.LatLng(place.latitude, place.longitude);
 
       const map = new naverMaps.Map(container, {
@@ -204,7 +227,7 @@ export default function DecidePage() {
         position: placePos,
         map,
         zIndex: 200,
-        icon: makeIcon(place.name, PLACE_MARKER_COLOR, initialZoom),
+        icon: makeIcon(place.name, PLACE_MARKER_COLOR, initialZoom, markerScale),
       });
       data.markers.push(destMarker);
       data.markerMetas.push({ marker: destMarker, label: place.name, color: PLACE_MARKER_COLOR });
@@ -226,7 +249,7 @@ export default function DecidePage() {
           position: friendPos,
           map,
           zIndex: 100,
-          icon: makeIcon(result.friendName, markerColor, initialZoom),
+          icon: makeIcon(result.friendName, markerColor, initialZoom, markerScale),
         });
         data.markers.push(marker);
         data.markerMetas.push({ marker, label: result.friendName, color: markerColor });
@@ -280,14 +303,14 @@ export default function DecidePage() {
       // Resize labels on zoom change
       data.zoomListener = naverMaps.Event.addListener(map, "zoom_changed", (zoom: number) => {
         data.markerMetas.forEach(({ marker, label, color }) => {
-          marker.setIcon(makeIcon(label, color, zoom));
+          marker.setIcon(makeIcon(label, color, zoom, markerScale));
         });
       });
 
       map.fitBounds(bounds, { top: 60, right: 60, bottom: 60, left: 60 });
       /* eslint-enable @typescript-eslint/no-explicit-any */
     },
-    [friends, clearMapAt]
+    [friends, clearMapAt, makeIcon, markerScale]
   );
 
   useEffect(() => {
@@ -379,6 +402,26 @@ export default function DecidePage() {
           <span className="px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-700 rounded-full">
             데모 모드
           </span>
+        )}
+        {placeResults.length > 0 && (
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-gray-500">아이콘 크기</span>
+            <button
+              onClick={() => setMarkerScale((prev) => Math.max(1, prev - 1))}
+              disabled={markerScale <= 1}
+              className="w-6 h-6 flex items-center justify-center text-sm font-bold border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+            >
+              −
+            </button>
+            <span className="text-xs text-gray-500 w-4 text-center">{markerScale}</span>
+            <button
+              onClick={() => setMarkerScale((prev) => Math.min(10, prev + 1))}
+              disabled={markerScale >= 10}
+              className="w-6 h-6 flex items-center justify-center text-sm font-bold border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+            >
+              +
+            </button>
+          </div>
         )}
       </div>
 
@@ -524,7 +567,7 @@ export default function DecidePage() {
               <h3 className="text-sm font-medium text-gray-700 mb-3">경로 지도</h3>
               <div
                 ref={(el) => { mapRefs.current[placeIdx] = el; }}
-                className="w-full h-[300px] sm:h-[500px] rounded-lg"
+                className="w-full aspect-[3/4] md:aspect-[4/3] lg:aspect-[16/9] rounded-lg"
               />
               <div className="flex flex-wrap gap-3 mt-3">
                 {pr.items.map((result, idx) =>
