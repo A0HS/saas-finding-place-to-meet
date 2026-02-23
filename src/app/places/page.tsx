@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import NaverMap from "@/components/NaverMap";
-import { geocodeAddress } from "@/lib/geocode";
+import { geocodeAddress, reverseGeocodeCoords } from "@/lib/geocode";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { DUMMY_PLACES, DUMMY_CATEGORIES } from "@/lib/dummyData";
 
@@ -48,6 +48,11 @@ export default function PlacesPage() {
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [isBatchGeocoding, setIsBatchGeocoding] = useState(false);
   const [previewPlace, setPreviewPlace] = useState<Place | null>(null);
+  const [mapSearchQuery, setMapSearchQuery] = useState("");
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const [isMapSearching, setIsMapSearching] = useState(false);
+  const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
+  const [mapSearchError, setMapSearchError] = useState("");
 
   useEffect(() => {
     const supabase = createBrowserClient();
@@ -74,7 +79,7 @@ export default function PlacesPage() {
     if (res.ok) setCategories(await res.json());
   }
 
-  // --- Geocoding ---
+  // --- Geocoding (manual address check in modal) ---
   async function handleGeocode() {
     if (!formAddress.trim()) return;
     setIsGeocoding(true);
@@ -84,10 +89,61 @@ export default function PlacesPage() {
     try {
       const result = await geocodeAddress(formAddress);
       setGeoResult(result);
+      setMapCenter({ lat: result.lat, lng: result.lng });
     } catch (err) {
       setGeoError(err instanceof Error ? err.message : "좌표 변환에 실패했습니다. 네이버 지도 API에서 변환 가능한 주소를 입력해주세요.");
     } finally {
       setIsGeocoding(false);
+    }
+  }
+
+  // --- Modal Map Search & Click ---
+  async function handleModalMapSearch() {
+    if (!mapSearchQuery.trim()) return;
+    setIsMapSearching(true);
+    setMapSearchError("");
+
+    try {
+      const res = await fetch("/api/search-place", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: mapSearchQuery }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        setMapCenter({ lat: data.lat, lng: data.lng });
+        if (data.exact) {
+          // Exact address match — auto-fill form
+          setFormAddress(data.displayAddress);
+          setGeoResult({ lat: data.lat, lng: data.lng, displayAddress: data.displayAddress });
+          setGeoError("");
+        }
+      } else {
+        setMapSearchError(data.error || "검색에 실패했습니다.");
+      }
+    } catch {
+      setMapSearchError("검색 중 오류가 발생했습니다.");
+    } finally {
+      setIsMapSearching(false);
+    }
+  }
+
+  async function handleModalMapClick(lat: number, lng: number) {
+    setIsReverseGeocoding(true);
+
+    try {
+      const result = await reverseGeocodeCoords(lat, lng);
+      setFormAddress(result.displayAddress);
+      setGeoResult({ lat, lng, displayAddress: result.displayAddress });
+      setGeoError("");
+    } catch {
+      const fallback = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+      setFormAddress(fallback);
+      setGeoResult({ lat, lng, displayAddress: fallback });
+      setGeoError("");
+    } finally {
+      setIsReverseGeocoding(false);
     }
   }
 
@@ -99,6 +155,9 @@ export default function PlacesPage() {
     setFormCategoryId("");
     setGeoResult(null);
     setGeoError("");
+    setMapSearchQuery("");
+    setMapCenter(null);
+    setMapSearchError("");
     setIsPlaceModalOpen(true);
   }
 
@@ -113,6 +172,13 @@ export default function PlacesPage() {
         : null
     );
     setGeoError("");
+    setMapSearchQuery("");
+    setMapCenter(
+      place.latitude && place.longitude
+        ? { lat: place.latitude, lng: place.longitude }
+        : null
+    );
+    setMapSearchError("");
     setIsPlaceModalOpen(true);
   }
 
@@ -121,7 +187,7 @@ export default function PlacesPage() {
     if (!formName.trim() || !formAddress.trim()) return;
 
     if (!geoResult) {
-      setGeoError("주소 확인을 먼저 진행해주세요. 네이버 지도 API로 좌표 변환이 가능한 주소를 입력해주세요.");
+      setGeoError("주소 확인을 먼저 진행해주세요. 지도에서 위치를 선택하거나 도로명주소를 입력해주세요.");
       return;
     }
 
@@ -530,6 +596,50 @@ export default function PlacesPage() {
             <h2 className="text-lg font-bold mb-4">
               {editingPlace ? "장소 수정" : "장소 추가"}
             </h2>
+
+            {/* Map Search Section */}
+            <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+              <p className="text-sm font-medium text-gray-700 mb-2">지도에서 찾기</p>
+              <div className="flex space-x-2 mb-2">
+                <input
+                  type="text"
+                  value={mapSearchQuery}
+                  onChange={(e) => setMapSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleModalMapSearch()}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="장소 또는 주소 검색 (예: 정자역)"
+                />
+                <button
+                  type="button"
+                  onClick={handleModalMapSearch}
+                  disabled={isMapSearching || !mapSearchQuery.trim()}
+                  className="px-3 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 disabled:bg-gray-300 text-sm whitespace-nowrap"
+                >
+                  {isMapSearching ? "검색 중..." : "검색"}
+                </button>
+              </div>
+              {mapSearchError && <p className="mb-2 text-sm text-red-600">{mapSearchError}</p>}
+
+              {mapCenter ? (
+                <>
+                  <NaverMap
+                    lat={mapCenter.lat}
+                    lng={mapCenter.lng}
+                    onMapClick={handleModalMapClick}
+                  />
+                  {isReverseGeocoding ? (
+                    <p className="mt-1 text-xs text-gray-400">주소 확인 중...</p>
+                  ) : (
+                    <p className="mt-1 text-xs text-gray-400">지도를 클릭하여 정확한 위치를 선택하세요</p>
+                  )}
+                </>
+              ) : (
+                <div className="flex items-center justify-center h-48 bg-gray-100 rounded-lg">
+                  <p className="text-xs text-gray-400">장소를 검색하면 지도가 표시됩니다</p>
+                </div>
+              )}
+            </div>
+
             <form onSubmit={handlePlaceSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">장소명</label>
@@ -556,7 +666,7 @@ export default function PlacesPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">주소</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">주소 (도로명주소 입력)</label>
                 <div className="flex space-x-2">
                   <input
                     type="text"
@@ -567,7 +677,7 @@ export default function PlacesPage() {
                       setGeoError("");
                     }}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="주소를 입력하세요"
+                    placeholder="(예시) 강남대로 396"
                     required
                   />
                   <button
@@ -584,8 +694,6 @@ export default function PlacesPage() {
                   <p className="mt-1 text-sm text-green-600">확인됨: {geoResult.displayAddress}</p>
                 )}
               </div>
-
-              {geoResult && <NaverMap lat={geoResult.lat} lng={geoResult.lng} />}
 
               <div className="flex justify-end space-x-3 pt-2">
                 <button
