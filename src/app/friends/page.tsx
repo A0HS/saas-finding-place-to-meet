@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import NaverMap from "@/components/NaverMap";
-import { geocodeAddress } from "@/lib/geocode";
+import { geocodeAddress, reverseGeocodeCoords } from "@/lib/geocode";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { DUMMY_FRIENDS } from "@/lib/dummyData";
 
@@ -34,6 +34,11 @@ export default function FriendsPage() {
   const [isBatchGeocoding, setIsBatchGeocoding] = useState(false);
   const [previewFriend, setPreviewFriend] = useState<Friend | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [mapSearchQuery, setMapSearchQuery] = useState("");
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const [isMapSearching, setIsMapSearching] = useState(false);
+  const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
+  const [mapSearchError, setMapSearchError] = useState("");
 
   useEffect(() => {
     const supabase = createBrowserClient();
@@ -60,6 +65,9 @@ export default function FriendsPage() {
     setFormAddress("");
     setGeoResult(null);
     setGeoError("");
+    setMapSearchQuery("");
+    setMapCenter(null);
+    setMapSearchError("");
     setIsModalOpen(true);
   }
 
@@ -73,6 +81,13 @@ export default function FriendsPage() {
         : null
     );
     setGeoError("");
+    setMapSearchQuery("");
+    setMapCenter(
+      friend.latitude && friend.longitude
+        ? { lat: friend.latitude, lng: friend.longitude }
+        : null
+    );
+    setMapSearchError("");
     setIsModalOpen(true);
   }
 
@@ -85,10 +100,59 @@ export default function FriendsPage() {
     try {
       const result = await geocodeAddress(formAddress);
       setGeoResult(result);
+      setMapCenter({ lat: result.lat, lng: result.lng });
     } catch (err) {
       setGeoError(err instanceof Error ? err.message : "주소 확인 중 오류가 발생했습니다.");
     } finally {
       setIsGeocoding(false);
+    }
+  }
+
+  async function handleModalMapSearch() {
+    if (!mapSearchQuery.trim()) return;
+    setIsMapSearching(true);
+    setMapSearchError("");
+
+    try {
+      const res = await fetch("/api/search-place", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: mapSearchQuery }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        setMapCenter({ lat: data.lat, lng: data.lng });
+        if (data.exact) {
+          setFormAddress(data.displayAddress);
+          setGeoResult({ lat: data.lat, lng: data.lng, displayAddress: data.displayAddress });
+          setGeoError("");
+        }
+      } else {
+        setMapSearchError(data.error || "검색에 실패했습니다.");
+      }
+    } catch {
+      setMapSearchError("검색 중 오류가 발생했습니다.");
+    } finally {
+      setIsMapSearching(false);
+    }
+  }
+
+  async function handleModalMapClick(lat: number, lng: number) {
+    setIsReverseGeocoding(true);
+
+    try {
+      const result = await reverseGeocodeCoords(lat, lng);
+      setFormAddress(result.displayAddress);
+      setGeoResult({ lat, lng, displayAddress: result.displayAddress });
+      setGeoError("");
+    } catch {
+      const fallback = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+      setFormAddress(fallback);
+      setGeoResult({ lat, lng, displayAddress: fallback });
+      setGeoError("");
+    } finally {
+      setIsReverseGeocoding(false);
     }
   }
 
@@ -324,6 +388,50 @@ export default function FriendsPage() {
             <h2 className="text-lg font-bold mb-4">
               {editingFriend ? "친구 수정" : "친구 추가"}
             </h2>
+
+            {/* Map Search Section */}
+            <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+              <p className="text-sm font-medium text-gray-700 mb-2">지도에서 찾기</p>
+              <div className="flex space-x-2 mb-2">
+                <input
+                  type="text"
+                  value={mapSearchQuery}
+                  onChange={(e) => setMapSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleModalMapSearch()}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="장소 또는 주소 검색 (예: 강남역)"
+                />
+                <button
+                  type="button"
+                  onClick={handleModalMapSearch}
+                  disabled={isMapSearching || !mapSearchQuery.trim()}
+                  className="px-3 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 disabled:bg-gray-300 text-sm whitespace-nowrap"
+                >
+                  {isMapSearching ? "검색 중..." : "검색"}
+                </button>
+              </div>
+              {mapSearchError && <p className="mb-2 text-sm text-red-600">{mapSearchError}</p>}
+
+              {mapCenter ? (
+                <>
+                  <NaverMap
+                    lat={mapCenter.lat}
+                    lng={mapCenter.lng}
+                    onMapClick={handleModalMapClick}
+                  />
+                  {isReverseGeocoding ? (
+                    <p className="mt-1 text-xs text-gray-400">주소 확인 중...</p>
+                  ) : (
+                    <p className="mt-1 text-xs text-gray-400">지도를 클릭하여 정확한 위치를 선택하세요</p>
+                  )}
+                </>
+              ) : (
+                <div className="flex items-center justify-center h-48 bg-gray-100 rounded-lg">
+                  <p className="text-xs text-gray-400">장소를 검색하면 지도가 표시됩니다</p>
+                </div>
+              )}
+            </div>
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">이름</label>
@@ -337,7 +445,7 @@ export default function FriendsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">주소</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">주소 (도로명주소 입력)</label>
                 <div className="flex space-x-2">
                   <input
                     type="text"
@@ -348,7 +456,7 @@ export default function FriendsPage() {
                       setGeoError("");
                     }}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="주소를 입력하세요"
+                    placeholder="(예시) 강남대로 396"
                     required
                   />
                   <button
@@ -369,11 +477,6 @@ export default function FriendsPage() {
                   </p>
                 )}
               </div>
-
-              {/* Map in modal */}
-              {geoResult && (
-                <NaverMap lat={geoResult.lat} lng={geoResult.lng} />
-              )}
 
               <div className="flex justify-end space-x-3 pt-2">
                 <button
